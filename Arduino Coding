@@ -1,0 +1,148 @@
+#include <PubSubClient.h>
+#include <WiFi.h>
+
+/****************************************
+
+  Define Constants
+****************************************/
+#define WIFISSID "**********" // Put your WifiSSID here
+#define PASSWORD "**********" // Put your wifi password here
+#define TOKEN "***********" // Put your Ubidots’ TOKEN
+#define MQTT_CLIENT_NAME "**********" // MQTT client Name, please enter your own 8-12 alphanumeric character ASCII string;
+//it should be a random and unique ascii string and different from all other devices
+#define VARIABLE_LABEL "moisture" // Assing the variable label
+#define VARIABLE_LABEL2 "waterlevel"
+#define DEVICE_LABEL "soilboi" // Assig the device label
+
+int pressure1pin = 32;
+char mqttBroker[] = "industrial.api.ubidots.com";
+char payload[2000]; //The maximum payload size supported by Ubidots is of 10000 bytes.
+char topic[150];
+char topic2[150];
+char topic3[150];
+char topic4[150];
+char topic5[150];
+char topic6[150];
+char topic7[150];
+
+// Space to store values to send
+char str_sensor1[60];
+char str_sensor2[60];
+
+/****************************************
+
+  Auxiliar Functions
+**************************************/
+WiFiClient ubidots;
+PubSubClient client(ubidots);
+void callback(char* topic, byte* payload, unsigned int length) {
+  char p[length + 1];
+  memcpy(p, payload, length);
+  p[length] = NULL;
+  String message(p);
+  Serial.write(payload, length);
+  Serial.println(topic);
+}
+
+void reconnect() {
+  // Loop until we’re reconnected
+  while (!client.connected()) {
+    Serial.println("Attempting MQTT connection…");
+
+    // Attemp to connect
+    if (client.connect(MQTT_CLIENT_NAME, TOKEN, "")) {
+      Serial.println("Connected");
+    } else {
+      Serial.print("Failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 2 seconds");
+      // Wait 2 seconds before retrying
+      delay(2000);
+    }
+  }
+}
+
+/****************************************
+
+  Main Functions
+****************************************/
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(WIFISSID, PASSWORD);
+  // Assign the pin as INPUT
+  //pinMode(SENSOR, INPUT);
+  Serial.println();
+  Serial.print("Wait for WiFi…");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(500);
+  }
+  pinMode(32, INPUT);
+  pinMode(33, INPUT);
+  pinMode(27, OUTPUT);
+  pinMode(5, OUTPUT);//blue
+  pinMode(18, OUTPUT);//green
+  pinMode(19, OUTPUT);//red
+  pinMode(5, OUTPUT);
+  pinMode(25, OUTPUT);
+  Serial.println("");
+  Serial.println("WiFi Connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+  client.setServer(mqttBroker, 1883);
+  client.setCallback(callback);
+}
+
+void loop() {
+  if (!client.connected()) {
+    reconnect();
+  }
+  digitalWrite(25, HIGH);
+  digitalWrite(18, HIGH);
+  digitalWrite(19, HIGH);
+  digitalWrite(5, HIGH);
+  float RawMoisture = (analogRead(32) + 150);
+  float moisture = 100 - map(RawMoisture, 2257, 3300, 0, 100) ;
+  //Serial.print(moisture);
+  Serial.println(RawMoisture);
+
+  float rawwaterlevel = (analogRead(33) + 150);
+  float waterlevel =  map(rawwaterlevel, 2300, 3200, 0, 100) ;
+  Serial.print(rawwaterlevel);
+
+  if (RawMoisture > 3000) {                                 // Line22: If sensor > Threshold, do line23,24
+
+    digitalWrite(27, LOW);                                                       // Line24-1: blank; add instruction if required
+
+  }
+  else {                                                    // Line25: else, do line 26,27
+    digitalWrite(27, HIGH);                                                        // Line27: blank; add instruction if required
+  }
+
+  if (rawwaterlevel < 2533) {
+    digitalWrite(19, LOW);//red
+  }
+  else if (rawwaterlevel > 2766) {
+    digitalWrite(18, LOW);//green
+  }
+  else {
+    digitalWrite(5, LOW);//blue
+  }
+
+
+  dtostrf(moisture, 4, 2, str_sensor1);
+  dtostrf(waterlevel, 4, 2, str_sensor2);
+
+  sprintf(topic, "%s%s", "/v1.6/devices/", DEVICE_LABEL);
+  sprintf(payload, "%s", ""); // Cleans the payload
+  sprintf(payload, "{\"%s\":%s,", VARIABLE_LABEL, str_sensor1); // Adds the variable label
+  sprintf(payload, "%s \"%s\":%s}", payload, VARIABLE_LABEL2, str_sensor2); // Adds the variable label
+  //sprintf(payload, "%s \"%s\":%s}", payload, "var-3", "160"); // Adds the variable label
+  Serial.println("Publishing data to Ubidots Cloud");
+  Serial.println(payload);
+  client.publish(topic, payload);
+  client.loop();
+
+  delay(22000);
+}
